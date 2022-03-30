@@ -13,5 +13,4 @@ A good first test is "a.out 3 4 0 0"
 
 This project was created for Operational Systems at RPI, Spring
 2022.
-
 Author: Nate Zink
