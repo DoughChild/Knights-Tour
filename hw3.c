@@ -15,12 +15,13 @@ extern int next_thread_id;
 extern int max_squares;
 extern int total_tours;
 
-    pthread_mutex_t max_squares_mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_t total_tours_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t next_thread_id_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t max_squares_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t total_tours_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct Board
 {
-    //int thread_num;
+    int thread_id;
     int **board;
     int rows;
     int cols;
@@ -36,6 +37,17 @@ typedef struct Move
     int x;
     int y;
 } Move;
+
+
+int getName(Board* b) {
+    pthread_mutex_lock(&next_thread_id_mutex);
+    {
+        b->thread_id = next_thread_id;
+        next_thread_id++;
+    }
+    pthread_mutex_unlock(&next_thread_id_mutex);
+    return EXIT_SUCCESS;
+}
 
 
 Move* getMoves(Board *cur_board, int *num_moves)
@@ -135,29 +147,17 @@ int callocBoard(Board* b, int rows, int cols) {
 
 void* thread_function(void *arg)
 {
-    // detach from the parent thread so resources are immediately freed
-    pthread_t mytid = pthread_self();
-    pthread_detach(mytid);
-
-    
     // get the board update values
     Board *cur_board = (Board *)arg;
     cur_board->num_squares++;
     cur_board->board[cur_board->cur_row][cur_board->cur_col] = cur_board->num_squares;
-    //printf("T%lu: row/col %d/%d,  current location (%d, %d), num_squares: %d\n", (unsigned long)mytid, cur_board->rows, cur_board->cols, cur_board->cur_row, cur_board->cur_col, cur_board->num_squares);
-
+    getName(cur_board);
 
     for (int i = 0; i < 1; i++) {
         // get new moves
         int num_moves = 0;
         Move* possible_moves = getMoves(cur_board, &num_moves);
 
-        printf("T%lu: Num moves %d, and are: ", (unsigned long)mytid, num_moves);
-        for (int k = 0; k < num_moves; k++) {
-            printf(" (%d, %d)", possible_moves[k].x, possible_moves[k].y);
-        }
-        printf(". Num_squares is %d\n", cur_board->num_squares);        
-        
         // if there are no possible moves then we should print out dead end
         if (num_moves == 0) {
             int total_squares = cur_board->rows * cur_board->cols;
@@ -167,10 +167,10 @@ void* thread_function(void *arg)
                 pthread_mutex_lock(&max_squares_mutex);
                 {
                     if (cur_board->num_squares > max_squares) {
-                        printf("T%lu: Sonny found a full knight's tour; incremented total_tours; updated max_squares\n", (unsigned long)mytid);            
+                        printf("T%d: Sonny found a full knight's tour; incremented total_tours; updated max_squares\n", cur_board->thread_id);            
                         max_squares = cur_board->num_squares;
                     } else {
-                        printf("T%lu: Sonny found a full knight's tour; incremented total_tours\n", (unsigned long)mytid);            
+                        printf("T%d: Sonny found a full knight's tour; incremented total_tours\n", cur_board->thread_id);            
                     }
                 }
                 pthread_mutex_unlock(&max_squares_mutex);
@@ -180,20 +180,25 @@ void* thread_function(void *arg)
                 {
                     total_tours++;
                 }
-                pthread_mutex_unlock(&max_squares_mutex);
-
+                pthread_mutex_unlock(&total_tours_mutex);
+//                printf("T%d: About to exit\n", cur_board->thread_id);
+                free(possible_moves);
+                pthread_exit(&cur_board->thread_id);
             } else {
                 // get the lock for the max squares, update the value
                 pthread_mutex_lock(&max_squares_mutex);
                 {
                     if (cur_board->num_squares > max_squares) {
-                        printf("T%lu: Dead end at move #%d; updated max_squares\n", (unsigned long)mytid, cur_board->num_squares);
+                        printf("T%d: Dead end at move #%d; updated max_squares\n", cur_board->thread_id, cur_board->num_squares);
                         max_squares = cur_board->num_squares;
                     } else {
-                        printf("T%lu: Dead end at move #%d\n", (unsigned long)mytid, cur_board->num_squares);
+                        printf("T%d: Dead end at move #%d\n", cur_board->thread_id, cur_board->num_squares);
                     }
                 }
                 pthread_mutex_unlock(&max_squares_mutex);
+//                printf("T%d: About to exit\n", cur_board->thread_id);
+                free(possible_moves);
+                pthread_exit(&cur_board->thread_id);
             }
         } else if (num_moves == 1) { 
             // this is the only case where we stay within this loop
@@ -206,7 +211,8 @@ void* thread_function(void *arg)
         } else {
             // the last case is that there are multiple moves
             // in this case we have to create a number of child threads
-            printf("T%lu: %d possible moves after move #%d; creating %d child threads...\n", (unsigned long)mytid, num_moves, cur_board->num_squares, num_moves);
+            printf("T%d: %d possible moves after move #%d; creating %d child threads...\n", cur_board->thread_id, num_moves, cur_board->num_squares, num_moves);
+            pthread_t* threads = calloc(num_moves, sizeof(pthread_t));
             for (int j = 0; j < num_moves; j++)
             {
                 // creating a board for each child thread
@@ -218,18 +224,40 @@ void* thread_function(void *arg)
 
                 pthread_t tid;
                 int rc = pthread_create(&tid, NULL, thread_function, b);
+                threads[j] = tid;
                 if (rc != 0)
                 {
                     fprintf(stderr, "ERROR: pthread_create() failed (%d): %s\n", rc, strerror(rc));
                     return NULL;
                 }
             }
+            printf("T%d: Waiting for child threads to join back\n", cur_board->thread_id);
+            // wait for all threads to join back
+            for (int k = 0; k < num_moves; k++) {
+                int* ptr;
+//                printf("T%d: About to join child #%d\n", cur_board->thread_id, k);
+                int rc = pthread_join( threads[k], (void**)&ptr);
+                if ( rc != 0 ) {
+                    fprintf( stderr, "T%d: pthread_join() failed (%d)\n", cur_board->thread_id, rc);
+                    return NULL;
+                } else {
+                    printf("T%d: T%d joined\n", cur_board->thread_id, *ptr);//threads[k]);
+                }
+            }
+            free( threads );
+//            printf("T%d: About to exit\n", cur_board->thread_id);
+            pthread_exit(&cur_board->thread_id);
         }
+        free( possible_moves );
     }
 
-    sleep(1);
+    //sleep(1);
     return NULL;
 }
+
+
+
+
 
 
 
@@ -272,7 +300,6 @@ int simulate(int argc, char *argv[])
 
 
 
-
     // create first board:
     Board *start_board = (struct Board *)calloc(sizeof(Board), 1);
     callocBoard(start_board, rows, cols);
@@ -282,8 +309,8 @@ int simulate(int argc, char *argv[])
             start_board->board[i][j] = -1;
         }
     }
-    start_board->num_squares = 1;
     // discover the starting spot
+    start_board->num_squares = 1;
     start_board->board[start_row][start_col] = 1;
     start_board->cur_row = start_row;
     start_board->cur_col = start_col;
@@ -304,6 +331,7 @@ int simulate(int argc, char *argv[])
     }
 
     // make array to hold IDs of al child threads, so that we can wait on them
+    pthread_t* threads = calloc(num_moves, sizeof(pthread_t));
     for (int i = 0; i < num_moves; i++)
     {
         // creating a board for each child thread
@@ -312,17 +340,31 @@ int simulate(int argc, char *argv[])
         b = copyBoard(b, start_board);
         b->cur_row = possible_moves[i].x;
         b->cur_col = possible_moves[i].y;
-        //b->thread_num = i + 1;
 
         // GENERATE THREADS HERE
         pthread_t tid;
         int rc = pthread_create(&tid, NULL, thread_function, b);
+        threads[i] = tid;
         if (rc != 0)
         {
             fprintf(stderr, "ERROR: pthread_create() failed (%d): %s\n", rc, strerror(rc));
             return EXIT_FAILURE;
         }
     }
+
+    // wait for all threads to join back
+    for (int i = 0; i < num_moves; i++) {
+        int* ptr;
+        int rc = pthread_join( threads[i], (void**)&ptr);
+        if ( rc != 0 ) {
+            fprintf( stderr, "pthread_join() failed (%d)\n", rc );
+            return EXIT_FAILURE;
+        } else {
+            printf("MAIN: T%d joined\n", *ptr);
+        }
+    }
+    free( threads );
+
 
     //printf("freeing array\n");
     free(possible_moves);
@@ -333,7 +375,7 @@ int simulate(int argc, char *argv[])
     free(start_board->board);
     free(start_board);
 
-    sleep(3);
+    //sleep(3);
 
     printf("most squares found: %d\n", max_squares);
     printf("knight's tours found: %d\n", total_tours);
