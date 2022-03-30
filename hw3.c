@@ -178,12 +178,8 @@ void* thread_function(void *arg)
                 // get lock on updating max squares
                 pthread_mutex_lock(&max_squares_mutex);
                 {
-                    if (cur_board->num_squares > max_squares) {
-                        printf("T%d: Sonny found a full knight's tour; incremented total_tours; updated max_squares\n", cur_board->thread_id);            
-                        max_squares = cur_board->num_squares;
-                    } else {
-                        printf("T%d: Sonny found a full knight's tour; incremented total_tours\n", cur_board->thread_id);            
-                    }
+                    printf("T%d: Sonny found a full knight's tour; incremented total_tours\n", cur_board->thread_id);            
+                    max_squares = cur_board->num_squares;
                 }
                 pthread_mutex_unlock(&max_squares_mutex);
 
@@ -346,8 +342,8 @@ int simulate(int argc, char *argv[])
     if (num_moves > 0) {
         printf("MAIN: %d possible moves after move #1; creating %d child threads...\n", num_moves, num_moves);
     } else {
-        printf("MAIN: Dead end at move #1\n");
-        printf("MAIN: Search complete; best solution(s) visited 1 squares out of %d\n", (rows * cols));
+        printf("MAIN: Dead end at move #1; updated max_squares\n");
+        max_squares = 1;
     }
 
     // make array to hold IDs of al child threads, so that we can wait on them
@@ -405,11 +401,15 @@ int simulate(int argc, char *argv[])
     // printf("knight's tours found: %d\n", total_tours);
     // printf("ran <3 <3 <3 \n");
 
-    if (total_tours == 0) 
-        printf("MAIN: Search complete; best solution(s) visited %d squares out of %d\n", max_squares, total_squares);
-    else
+    if (total_tours == 0) {
+        if (max_squares == 1) {
+            printf("MAIN: Search complete; best solution(s) visited %d square out of %d\n", max_squares, total_squares);
+        } else {
+            printf("MAIN: Search complete; best solution(s) visited %d squares out of %d\n", max_squares, total_squares);
+        }
+    } else {
         printf("MAIN: Search complete; found %d possible paths to achieving a full knight's tour\n", total_tours);
-
+    }
 
     return EXIT_SUCCESS;
 }
