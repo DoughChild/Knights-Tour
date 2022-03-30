@@ -193,7 +193,6 @@ void* thread_function(void *arg)
                     total_tours++;
                 }
                 pthread_mutex_unlock(&total_tours_mutex);
-//                printf("T%d: About to exit\n", cur_board->thread_id);
                 free(possible_moves);
                 pthread_exit(cur_board);
             } else {
@@ -208,7 +207,6 @@ void* thread_function(void *arg)
                     }
                 }
                 pthread_mutex_unlock(&max_squares_mutex);
-//                printf("T%d: About to exit\n", cur_board->thread_id);
                 free(possible_moves);
                 pthread_exit(cur_board);
             }
@@ -257,7 +255,6 @@ void* thread_function(void *arg)
             #ifndef NO_PARALLEL
                 for (int k = 0; k < num_moves; k++) {
                     Board* ptr;
-    //                printf("T%d: About to join child #%d\n", cur_board->thread_id, k);
                     int rc = pthread_join( threads[k], (void**)&ptr);
                     if ( rc != 0 ) {
                         fprintf( stderr, "T%d: pthread_join() failed (%d)\n", cur_board->thread_id, rc);
@@ -269,13 +266,11 @@ void* thread_function(void *arg)
             #endif
             free( threads );
             free( possible_moves );
-//            printf("T%d: About to exit\n", cur_board->thread_id);
             pthread_exit(cur_board);
         }
         free( possible_moves );
     }
 
-    //sleep(1);
     return NULL;
 }
 
@@ -306,6 +301,7 @@ int simulate(int argc, char *argv[])
     int cols = atoi(argv[2]);
     int start_row = atoi(argv[3]);
     int start_col = atoi(argv[4]);
+    int total_squares = rows * cols;
     // error checking
     if (rows <= 2 || cols <= 2)
     {
@@ -323,7 +319,7 @@ int simulate(int argc, char *argv[])
     total_tours = 0;
 
 
-
+    
     // create first board:
     Board *start_board = (struct Board *)calloc(sizeof(Board), 1);
     callocBoard(start_board, rows, cols);
@@ -340,7 +336,7 @@ int simulate(int argc, char *argv[])
     start_board->cur_col = start_col;
     start_board->rows = rows;
     start_board->cols = cols;
-
+    
     printf("MAIN: Solving Sonny's knight's tour problem for a %dx%d board\n", rows, cols);
     printf("MAIN: Sonny starts at row %d and column %d (move #1)\n", start_row, start_col);
 
@@ -402,23 +398,18 @@ int simulate(int argc, char *argv[])
         }
     #endif
     free( threads );
-
-
-    //printf("freeing array\n");
     free(possible_moves);
-    // for (int i = 0; i < rows; i++)
-    // {
-    //     free(start_board->board[i]);
-    // }
-    // free(start_board->board);
-    // free(start_board);
     free(start_board);
 
-    //sleep(3);
+    // printf("most squares found: %d\n", max_squares);
+    // printf("knight's tours found: %d\n", total_tours);
+    // printf("ran <3 <3 <3 \n");
 
-    printf("most squares found: %d\n", max_squares);
-    printf("knight's tours found: %d\n", total_tours);
-    printf("ran <3 <3 <3 \n");
+    if (total_tours == 0) 
+        printf("MAIN: Search complete; best solution(s) visited %d squares out of %d\n", max_squares, total_squares);
+    else
+        printf("MAIN: Search complete; found %d possible paths to achieving a full knight's tour\n", total_tours);
+
 
     return EXIT_SUCCESS;
 }
